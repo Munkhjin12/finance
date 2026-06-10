@@ -69,7 +69,7 @@ authForm.addEventListener('submit', async (e) => {
             showMessage("Амжилттай нэвтэрлээ!", "text-success");
             setTimeout(()=>{
                 window.location.href = 'dashboard.html'
-            },2300)
+            },1300)
         }
     } catch (err) {
         showMessage("Сүлжээний алдаа гарлаа.", "text-danger");

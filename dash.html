@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Хувийн санхүү бүртгэл - Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body id="dashboard" class="roboto-font bg-light">
+
+    <nav class="navbar navbar-expand-lg navbar-white bg-white shadow-sm mb-4 py-3">
+        <div class="container">
+            <a class="navbar-brand fw-bold text-success fs-4" href="#">
+                <i class="fa-solid fa-austral-sign" style="color: #877fcc;"></i> Хувийн санхүү
+            </a>
+            <div class="ms-auto d-flex align-items-center">
+                <span class="text-muted small fw-medium me-3" id="user-email">
+                    <i class="fa-regular fa-user me-1"></i> хэрэглэгч@email.com
+                </span>
+                <button class="btn btn-outline-danger btn-sm rounded-3 px-3 fw-medium" id="logout-btn">
+                    <i class="fa-solid fa-right-from-bracket me-1"></i> Гарах
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container pb-5">
+        
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card shadow-sm p-3 rounded-4 border-0 bg-white">
+                    <div class="card-body text-center">
+                        <div class="text-muted small fw-semibold mb-1">Нийт Орлого</div>
+                        <div class="fs-3 fw-bold text-success">+5,000,000 ₮</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm p-3 rounded-4 border-0 bg-white">
+                    <div class="card-body text-center">
+                        <div class="text-muted small fw-semibold mb-1">Нийт Зарлага</div>
+                        <div class="fs-3 fw-bold text-danger">-2,100,000 ₮</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm p-3 rounded-4 border-0 bg-success text-white">
+                    <div class="card-body text-center">
+                        <div class="text-white-50 small fw-semibold mb-1">Үлдэгдэл</div>
+                        <div class="fs-3 fw-bold">2,900,000 ₮</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            
+            <div class="col-md-4">
+                <div class="card shadow-sm p-4 rounded-4 border-0 bg-white">
+                    <h5 class="fw-bold mb-4 text-dark">Шинэ гүйлгээ нэмэх</h5>
+                    
+                    <form id="transaction-form">
+                        <div class="mb-3">
+                            <label for="amount" class="form-label small fw-semibold">Мөнгөн дүн</label>
+                            <input type="number" class="form-control form-control-lg fs-6" id="amount" placeholder="Жишээ нь: 15000" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold d-block">Төрөл</label>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="type" id="type-expense" value="expense" checked>
+                                <label class="form-check-label small" for="type-expense">Зардал</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="type" id="type-income" value="income">
+                                <label class="form-check-label small" for="type-income">Орлого</label>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="description" class="form-label small fw-semibold">Тайлбар</label>
+                            <input type="text" class="form-control form-control-lg fs-6" id="description" placeholder="Жишээ нь: Өдрийн хоол" required>
+                        </div>
+
+                        <button type="submit" class="btn btn-success btn-lg w-100 fw-semibold fs-6">Нэмэх (+)</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card shadow-sm p-4 rounded-4 border-0 bg-white">
+                    <h5 class="fw-bold mb-4 text-dark">Гүйлгээний түүх</h5>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col" class="text-muted small fw-semibold py-3">Огноо</th>
+                                    <th scope="col" class="text-muted small fw-semibold py-3">Төрөл</th>
+                                    <th scope="col" class="text-muted small fw-semibold py-3">Дүн</th>
+                                    <th scope="col" class="text-muted small fw-semibold py-3">Тайлбар</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted small">06-06</td>
+                                    <td><span class="badge bg-danger-subtle text-danger px-2.5 py-1.5 rounded-3">Зардал</span></td>
+                                    <td class="fw-bold text-danger">-15,000 ₮</td>
+                                    <td class="text-secondary small">Үдийн хоол</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted small">06-05</td>
+                                    <td><span class="badge bg-success-subtle text-success px-2.5 py-1.5 rounded-3">Орлого</span></td>
+                                    <td class="fw-bold text-success">+500,000 ₮</td>
+                                    <td class="text-secondary small">Цалин</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted small">06-04</td>
+                                    <td><span class="badge bg-danger-subtle text-danger px-2.5 py-1.5 rounded-3">Зардал</span></td>
+                                    <td class="fw-bold text-danger">-45,000 ₮</td>
+                                    <td class="text-secondary small">Бензин</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://kit.fontawesome.com/99390deed7.js" crossorigin="anonymous"></script>
+    
+    </body>
+</html>

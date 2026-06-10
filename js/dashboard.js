@@ -1,5 +1,6 @@
 import { supabase } from "./supabase.js";
 
+// Гүйлгээний формын элементүүд
 const transactionForm = document.getElementById('transaction-form');
 const txTypeInput = document.getElementById('tx-type');
 const txCategoryInput = document.getElementById('tx-category');
@@ -7,79 +8,143 @@ const txAmountInput = document.getElementById('tx-amount');
 const txDateInput = document.getElementById('tx-date');
 const txDescInput = document.getElementById('tx-desc');
 
-transactionForm.addEventListener('submit', async (e) =>{
+// Төсвийн формын элементүүд (Энд нэг л удаа зарлана!)
+const budgetForm = document.getElementById('budget-form');
+const budgetCategoryInput = document.getElementById('budget-category');
+const budgetAmountInput = document.getElementById('budget-amount');
+const budgetMonthInput = document.getElementById('budget-month');
+
+document.addEventListener('DOMContentLoaded', async () => {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+        window.location.href = 'index.html';
+        return;
+    }
+    document.getElementById('user-email').textContent = user.email;
+    
+    // Хуудас ачаалагдахад гүйлгээ болон төсвийг зэрэг татаж харуулна
+    await fetchTransactions();
+    await fetchBudgets();
+});
+
+transactionForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const type = txTypeInput.value;
     const category = txCategoryInput.value;
     const amount = parseFloat(txAmountInput.value);
-    const date = txDateInput.value;
+    const date = txDateInput.value; // Жишээ нь: "2026-06-10"
     const description = txDescInput.value;
+    
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    // console.log(user)
 
     if (userError || !user) {
         alert("Сешн дууссан байна. Дахин нэвтрэнэ үү!");
         window.location.href = 'index.html';
         return;
     }
-        // Supabase рүү шинэ мөр өгөгдөл нэмэх (Insert) үйлдэл
-    const { data, error } = await supabase
-        .from('transactions') // Хэрэглэх хүснэгтийн нэр
+
+    // --- ТӨСӨВ ХЭТЭРСЭН ЭСЭХИЙГ ШАЛГАНА ---
+    if (type === 'expense') {
+        const currentMonthYear = date.substring(0, 7); // "2026-06"
+
+        // 1. Тухайн сард энэ ангилалд тогтоосон төсвийг Supabase-с хайх
+        const { data: budgetData } = await supabase
+            .from('budgets')
+            .select('limit_amount')
+            .eq('user_id', user.id)
+            .eq('category', category)
+            .eq('month_year', currentMonthYear)
+            .maybeSingle();
+
+        if (budgetData) {
+            const limitAmount = budgetData.limit_amount;
+
+            // 2. Зөвхөн тухайн сард хамаарах зарлагуудыг Supabase-с оновчтой шүүж авах
+            const startDate = `${currentMonthYear}-01`;
+            const endDate = `${currentMonthYear}-31`;
+
+            const { data: pastExpenses } = await supabase
+                .from('transactions')
+                .select('amount')
+                .eq('user_id', user.id)
+                .eq('type', 'expense')
+                .eq('category', category)
+                .gte('date', startDate)
+                .lte('date', endDate);
+            
+            let totalPastExpense = 0;
+            if (pastExpenses) {
+                pastExpenses.forEach(tx => {
+                    totalPastExpense += tx.amount;
+                });
+            }
+
+            // 3. Хязгаар шалгах
+            if (totalPastExpense + amount > limitAmount) {
+                const currentTotal = totalPastExpense + amount;
+                const parts = currentMonthYear.split('-');
+                const displayMonth = `${parts[0]} оны ${parts[1]} сар`;
+
+                const proceed = confirm(
+                    `⚠️ АНХААРУУЛГА!\n\nТаны ${displayMonth}-ын "${category}" ангиллын төсвийн хязгаар: ${limitAmount.toLocaleString()} ₮\nОдоогийн нийт зарцуулалт: ${currentTotal.toLocaleString()} ₮ болох гэж байна.\n\nТөсөв хэтрүүлж гүйлгээг үргэлжлүүлэх үү?`
+                );
+                
+                if (!proceed) {
+                    return; // Хэрэглэгч цуцалбал гүйлгээг хадгалахгүй зогсооно
+                }
+            }
+        }
+    }
+
+    // --- ГҮЙЛГЭЭ ХАДГАЛАХ ХЭСЭГ ---
+    const { error } = await supabase
+        .from('transactions')
         .insert([
             {
-                user_id: user.id,         // UUID
-                type: type,               // 'орлого' эсвэл 'зарлага'
-                category: category,       // 'Хоол хүнс', 'Цалин орлого' гэх мэт текст
-                amount: amount,           // Мөнгөн дүн (Too)
-                description: description, // Дэлгэрэнгүй тайлбар
-                date: date                // Сонгосон огноо (YYYY-MM-DD)
+                user_id: user.id,
+                type: type,
+                category: category,
+                amount: amount,
+                description: description,
+                date: date
             }
-        ])
-        .select(); // Хадгалагдсан өгөгдлийг хариу болгож буцааж авах
+        ]);
 
     if (error) {
         alert("Гүйлгээг хадгалахад алдаа гарлаа: " + error.message);
-        console.error("Алдааны дэлгэрэнгүй:", error);
     } else {
         alert("Гүйлгээ амжилттай бүртгэгдлээ!");
-        transactionForm.reset(); // Формын бүх талбарыг цэвэрлэж хоосон болгоно
+        transactionForm.reset();
     }
     fetchTransactions();
-    
 });
 
 async function fetchTransactions() {
-    // Нэвтэрсэн хэрэглэгчийг авах
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Supabase-с зөвхөн энэ хэрэглэгчийн гүйлгээнүүдийг огноогоор нь жагсааж авах
     const { data: transactions, error } = await supabase
         .from('transactions')
-        .select('*') // Бүх баганыг уншиж авна
-        .eq('user_id', user.id) // Зөвхөн энэ хэрэглэгчийнх гэсэн шүүлтүүр
-        .order('date', { ascending: false }); // Хамгийн шинэ гүйлгээг дээр нь гаргана
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false });
 
     if (error) {
         console.error("Гүйлгээ уншихад алдаа гарлаа:", error.message);
         return;
     }
-    // HTML хүснэгтэд гүйлгээнүүдийг үзүүлэх функцийг дуудаж, өгөгдлийг дамжуулна
     renderTransactions(transactions);
-    
-}function renderTransactions(transactions) {
+}
+
+function renderTransactions(transactions) {
     const listContainer = document.getElementById('transaction-list');
-    
-    // Дээд талын картуудын HTML элементүүдийг барьж авах
     const totalBalanceEl = document.getElementById('total-balance');
     const totalIncomeEl = document.getElementById('total-income');
     const totalExpenseEl = document.getElementById('total-expense');
 
-    // Нийлбэр дүнгүүдийг хадгалах хувьсагчид
     let totalIncome = 0;
     let totalExpense = 0;
 
-    // Хэрэв ямар ч гүйлгээ байхгүй бол картуудыг 0₮ болгоод хүснэгтэд хоосон гэж харуулна
     if (transactions.length === 0) {
         totalBalanceEl.innerText = '0₮';
         totalIncomeEl.innerText = '0₮';
@@ -98,11 +163,9 @@ async function fetchTransactions() {
 
     let htmlContent = '';
     
-    // Бүх гүйлгээнүүд дээгүүр давталт хийх
     transactions.forEach(tx => {
-        const amount = parseFloat(tx.amount) || 0; // Датаг тоо хэлбэрт шилжүүлэх
+        const amount = parseFloat(tx.amount) || 0;
 
-        // Төрлөөс нь хамаарч орлого, зарлагын нийлбэрийг бодох логик
         if (tx.type === 'income') {
             totalIncome += amount;
         } else if (tx.type === 'expense') {
@@ -131,16 +194,135 @@ async function fetchTransactions() {
         `;
     });
 
-    // Үлдэгдлийг бодох (Орлогоос зарлагыг хасна)
     const totalBalance = totalIncome - totalExpense;
-
-    // Олсон дүнгүүдээ дэлгэц дээрх картуудад зоож харуулах (.toLocaleString() нь мянгатаар таслал авна)
     totalIncomeEl.innerText = `${totalIncome.toLocaleString()}₮`;
     totalExpenseEl.innerText = `${totalExpense.toLocaleString()}₮`;
     totalBalanceEl.innerText = `${totalBalance.toLocaleString()}₮`;
 
-    // Хүснэгтийн мөрүүдийг оруулах
     listContainer.innerHTML = htmlContent;
-    
 }
-document.addEventListener('DOMContentLoaded', fetchTransactions);
+
+window.deleteTransaction = async function(id) {
+    const confirmDelete = confirm("Та энэ гүйлгээг устгахдаа итгэлтэй байна уу?");
+    if (!confirmDelete) return;
+
+    try {
+        const { error } = await supabase
+            .from('transactions')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        alert("Гүйлгээ амжилттай устгагдлаа.");
+        fetchTransactions();
+    } catch (error) {
+        alert("Гүйлгээ устгахад алдаа гарлаа: " + error.message);
+    }
+}
+
+const btnLogout = document.getElementById('btn-logout');
+btnLogout.addEventListener('click', async () => {
+    const confirmLogout = confirm("Та системээс гарахдаа итгэлтэй байна уу?");
+    if (!confirmLogout) return;
+
+    try {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+        window.location.href = 'index.html';
+    } catch (error) {
+        alert("Системээс гарахад алдаа гарлаа: " + error.message);
+    }
+});
+
+// --- ТӨСӨВ ТОГТООХ ФОРМЫН ЛОГИК ---
+budgetForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const category = budgetCategoryInput.value;
+    const limitAmount = parseFloat(budgetAmountInput.value);
+    const monthYear = budgetMonthInput.value; 
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+        alert("Сешн дууссан байна!");
+        return;
+    }
+
+    const { error } = await supabase
+        .from('budgets')
+        .insert([
+            {
+                user_id: user.id,
+                category: category,
+                limit_amount: limitAmount,
+                month_year: monthYear
+            }
+        ]);
+
+    if (error) {
+        alert("Төсөв тогтооход алдаа гарлаа: " + error.message);
+    } else {
+        const dateParts = monthYear.split('-');
+        alert(`${dateParts[0]} оны ${dateParts[1]} сарын ${category} ангилалд төсөв амжилттай тогтоогдлоо!`);
+        
+        budgetForm.reset();
+        
+        const instance = bootstrap.Offcanvas.getInstance(document.getElementById('offcanvasBudget'));
+        if (instance) instance.hide();
+        
+        await fetchBudgets();
+    }
+});
+
+// Хэрэглэгчийн тогтоосон төсвүүдийг уншиж жагсаах функц
+async function fetchBudgets() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: budgets, error } = await supabase
+        .from('budgets')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('month_year', { ascending: false });
+
+    if (error) {
+        console.error("Төсөв уншихад алдаа гарлаа:", error.message);
+        return;
+    }
+
+    const budgetsContainer = document.getElementById('current-budgets-list');
+    
+    if (!budgets || budgets.length === 0) {
+        budgetsContainer.innerHTML = `
+            <h6 class="fw-bold text-dark mb-3">Одоогийн тогтоосон төсвүүд:</h6>
+            <div class="text-center py-3 text-muted small bg-light rounded">Одоогоор төсөв тогтоогоогүй байна.</div>
+        `;
+        return;
+    }
+
+    let htmlContent = `<h6 class="fw-bold text-dark mb-3">Одоогийн тогтоосон төсвүүд:</h6>`;
+    
+    budgets.forEach(b => {
+        // "2026-06" гэснийг "2026 оны 06 сар" болгож хэрэглэгчид гоё харуулах хөрвүүлэлт
+        let displayMonth = b.month_year;
+        if (b.month_year && b.month_year.includes('-')) {
+            const parts = b.month_year.split('-');
+            displayMonth = `${parts[0]} оны ${parts[1]} сар`;
+        }
+
+        htmlContent += `
+            <div class="card p-2 mb-2 bg-light border-0 shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="fw-bold small text-dark">${b.category}</span>
+                        <span class="text-muted mx-1">•</span>
+                        <span class="small text-secondary fw-medium">${displayMonth}</span>
+                    </div>
+                    <span class="fw-bold text-primary small">${b.limit_amount.toLocaleString()} ₮</span>
+                </div>
+            </div>
+        `;
+    });
+
+    budgetsContainer.innerHTML = htmlContent;
+}

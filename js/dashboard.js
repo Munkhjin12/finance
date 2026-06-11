@@ -70,7 +70,6 @@ transactionForm.addEventListener('submit', async (e) => {
             const limitAmount = budgetData.limit_amount;
             const startDate = `${currentMonthYear}-01`;
             
-            // Сарын сүүлийн өдрийг зөв тооцоолох (2, 4, 6-р сар г.м)
             const parts = currentMonthYear.split('-');
             const lastDay = new Date(parts[0], parts[1], 0).getDate();
             const endDate = `${currentMonthYear}-${lastDay}`;
@@ -313,7 +312,9 @@ budgetForm.addEventListener('submit', async (e) => {
         if (instance) instance.hide();
         
         await fetchBudgets();
-        await checkBudgetMasterBadge(user.id);
+        
+        // Шинээр төсөв үүсгэх үед шууд мастер болгохгүй, хуучин цол байвал түр цэвэрлэнэ
+        await deleteBadge(user.id, "Төсвийн Мастер"); 
         await fetchUserBadges();
     }
 });
@@ -346,7 +347,6 @@ async function fetchBudgets() {
         return;
     }
 
-    // Локал цаг бүсээр одоогийн сарыг зөв авах ("2026-06")
     const currentMonthYear = getCurrentLocalMonthYear(); 
     const startDate = `${currentMonthYear}-01`;
     
@@ -354,19 +354,17 @@ async function fetchBudgets() {
     const lastDay = new Date(dateParts[0], dateParts[1], 0).getDate();
     const endDate = `${currentMonthYear}-${lastDay}`;
 
-    // Зарлагуудыг татах
     const { data: expenses } = await supabase
         .from('transactions')
         .select('category, amount, date')
         .eq('user_id', user.id)
         .eq('type', 'expense');
 
-    // Зарлагуудыг сар болон ангиллаар нь бүлэглэх
     let expenseMap = {};
     if (expenses) {
         expenses.forEach(tx => {
             if (tx.date) {
-                const txMonth = tx.date.substring(0, 7); // Гүйлгээний сар ("2026-06")
+                const txMonth = tx.date.substring(0, 7); 
                 const key = `${txMonth}_${tx.category}`;
                 expenseMap[key] = (expenseMap[key] || 0) + tx.amount;
             }
@@ -386,12 +384,10 @@ async function fetchBudgets() {
             displayMonth = `${parts[0]} оны ${parts[1]} сар`;
         }
 
-        // Төсвийн сар болон ангиллыг тааруулж зарлагыг олно
         const budgetKey = `${b.month_year}_${b.category}`;
         const spent = expenseMap[budgetKey] || 0;
         const remaining = b.limit_amount - spent;
         
-        // Зөвхөн яг одоогийн сарын төсвийг ерөнхий хураангуй бааранд нэмнэ
         if (b.month_year === currentMonthYear) {
             totalBudgetAmount += b.limit_amount;
             totalBudgetSpent += spent;
@@ -432,7 +428,6 @@ async function fetchBudgets() {
 
     budgetsContainer.innerHTML = htmlContent;
 
-    // 3. NIIYT ERONKHII ASHIGLALTYN KARTYG SHINECHLEKH
     if (hasCurrentMonthBudget && totalBudgetAmount > 0 && summaryContainer) {
         summaryContainer.classList.remove('d-none');
         
@@ -518,15 +513,23 @@ async function checkBudgetMasterBadge(userId) {
     }
 
     let isAllUnderBudget = true;
+    let hasActiveUsage = false; // Төсөв тогтоосон ангилалд бодитоор зарлага хийсэн эсэхийг шалгана
+
     budgets.forEach(b => {
         const budgetKey = `${b.month_year}_${b.category}`;
         const totalSpent = expenseMap[budgetKey] || 0;
+
+        if (totalSpent > 0) {
+            hasActiveUsage = true;
+        }
+
         if (totalSpent > b.limit_amount) {
             isAllUnderBudget = false; 
         }
     });
 
-    if (isAllUnderBudget) {
+    // Зөвхөн хязгаар дотроо байгаа БӨГӨӨД ядаж нэг төсвийг ашиглаж (зарлага хийж) эхэлсэн үед цол өгнө
+    if (isAllUnderBudget && hasActiveUsage) {
         await awardBadge(userId, "Төсвийн Мастер");
     } else {
         await deleteBadge(userId, "Төсвийн Мастер");

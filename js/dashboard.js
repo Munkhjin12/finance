@@ -1,6 +1,6 @@
 import { supabase } from "./supabase.js";
 
-// Гүйлгээний формын элементүүд
+// === ЭЛЕМЕНТҮҮДИЙГ БАРИЖ АВАХ ===
 const transactionForm = document.getElementById('transaction-form');
 const txTypeInput = document.getElementById('tx-type');
 const txCategoryInput = document.getElementById('tx-category');
@@ -8,12 +8,14 @@ const txAmountInput = document.getElementById('tx-amount');
 const txDateInput = document.getElementById('tx-date');
 const txDescInput = document.getElementById('tx-desc');
 
-// Төсвийн формын элементүүд (Энд нэг л удаа зарлана!)
 const budgetForm = document.getElementById('budget-form');
 const budgetCategoryInput = document.getElementById('budget-category');
 const budgetAmountInput = document.getElementById('budget-amount');
 const budgetMonthInput = document.getElementById('budget-month');
 
+const btnLogout = document.getElementById('btn-logout');
+
+// === ХУУДАС АЧААЛАГДАХАД АЖИЛЛАХ ХЭСЭГ ===
 document.addEventListener('DOMContentLoaded', async () => {
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) {
@@ -22,17 +24,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     document.getElementById('user-email').textContent = user.email;
     
-    // Хуудас ачаалагдахад гүйлгээ болон төсвийг зэрэг татаж харуулна
+    // Хуудас ачаалагдахад бүх өгөгдлийг зэрэг татаж харуулна
     await fetchTransactions();
     await fetchBudgets();
+    await fetchUserBadges(); 
 });
 
+// === ШИНЭ ГҮЙЛГЭЭ НЭМЭХ ЛОГИК ===
 transactionForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const type = txTypeInput.value;
     const category = txCategoryInput.value;
     const amount = parseFloat(txAmountInput.value);
-    const date = txDateInput.value; // Жишээ нь: "2026-06-10"
+    const date = txDateInput.value; 
     const description = txDescInput.value;
     
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -45,9 +49,8 @@ transactionForm.addEventListener('submit', async (e) => {
 
     // --- ТӨСӨВ ХЭТЭРСЭН ЭСЭХИЙГ ШАЛГАНА ---
     if (type === 'expense') {
-        const currentMonthYear = date.substring(0, 7); // "2026-06"
+        const currentMonthYear = date.substring(0, 7); 
 
-        // 1. Тухайн сард энэ ангилалд тогтоосон төсвийг Supabase-с хайх
         const { data: budgetData } = await supabase
             .from('budgets')
             .select('limit_amount')
@@ -58,8 +61,6 @@ transactionForm.addEventListener('submit', async (e) => {
 
         if (budgetData) {
             const limitAmount = budgetData.limit_amount;
-
-            // 2. Зөвхөн тухайн сард хамаарах зарлагуудыг Supabase-с оновчтой шүүж авах
             const startDate = `${currentMonthYear}-01`;
             const endDate = `${currentMonthYear}-31`;
 
@@ -79,7 +80,6 @@ transactionForm.addEventListener('submit', async (e) => {
                 });
             }
 
-            // 3. Хязгаар шалгах
             if (totalPastExpense + amount > limitAmount) {
                 const currentTotal = totalPastExpense + amount;
                 const parts = currentMonthYear.split('-');
@@ -89,9 +89,7 @@ transactionForm.addEventListener('submit', async (e) => {
                     `⚠️ АНХААРУУЛГА!\n\nТаны ${displayMonth}-ын "${category}" ангиллын төсвийн хязгаар: ${limitAmount.toLocaleString()} ₮\nОдоогийн нийт зарцуулалт: ${currentTotal.toLocaleString()} ₮ болох гэж байна.\n\nТөсөв хэтрүүлж гүйлгээг үргэлжлүүлэх үү?`
                 );
                 
-                if (!proceed) {
-                    return; // Хэрэглэгч цуцалбал гүйлгээг хадгалахгүй зогсооно
-                }
+                if (!proceed) return; 
             }
         }
     }
@@ -115,10 +113,15 @@ transactionForm.addEventListener('submit', async (e) => {
     } else {
         alert("Гүйлгээ амжилттай бүртгэгдлээ!");
         transactionForm.reset();
+        
+        // Шинэ гүйлгээ нэмэгдсэний дараа бажуудыг шалгана
+        await checkActivityBadge(user.id);
+        await checkBudgetMasterBadge(user.id);
     }
-    fetchTransactions();
+    await fetchTransactions();
 });
 
+// === ГҮЙЛГЭЭ ТАТАХ ФУНКЦ ===
 async function fetchTransactions() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -133,10 +136,11 @@ async function fetchTransactions() {
         console.error("Гүйлгээ уншихад алдаа гарлаа:", error.message);
         return;
     }
-    renderTransactions(transactions);
+    await renderTransactions(transactions);
 }
 
-function renderTransactions(transactions) {
+// === ГҮЙЛГЭЭГ ДЭЛГЭЦЭНД ХАРУУЛАХ ===
+async function renderTransactions(transactions) {
     const listContainer = document.getElementById('transaction-list');
     const totalBalanceEl = document.getElementById('total-balance');
     const totalIncomeEl = document.getElementById('total-income');
@@ -200,8 +204,19 @@ function renderTransactions(transactions) {
     totalBalanceEl.innerText = `${totalBalance.toLocaleString()}₮`;
 
     listContainer.innerHTML = htmlContent;
+
+    // [ЗАСАЛТ] .then()-ийг устгаж найдвартай async/await бүтэцтэй болгов
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            await checkFinancialBalanceBadge(user.id, totalIncome, totalExpense);
+        }
+    } catch (err) {
+        console.error("Баж шалгахад алдаа гарлаа:", err);
+    }
 }
 
+// === ГҮЙЛГЭЭ УСТГАХ ФУНКЦ ===
 window.deleteTransaction = async function(id) {
     const confirmDelete = confirm("Та энэ гүйлгээг устгахдаа итгэлтэй байна уу?");
     if (!confirmDelete) return;
@@ -214,13 +229,13 @@ window.deleteTransaction = async function(id) {
 
         if (error) throw error;
         alert("Гүйлгээ амжилттай устгагдлаа.");
-        fetchTransactions();
+        await fetchTransactions();
     } catch (error) {
         alert("Гүйлгээ устгахад алдаа гарлаа: " + error.message);
     }
 }
 
-const btnLogout = document.getElementById('btn-logout');
+// === СИСТЕМЭЭС ГАРАХ ===
 btnLogout.addEventListener('click', async () => {
     const confirmLogout = confirm("Та системээс гарахдаа итгэлтэй байна уу?");
     if (!confirmLogout) return;
@@ -234,7 +249,7 @@ btnLogout.addEventListener('click', async () => {
     }
 });
 
-// --- ТӨСӨВ ТОГТООХ ФОРМЫН ЛОГИК ---
+// === ТӨСӨВ ТОГТООХ ФОРМЫН ЛОГИК ===
 budgetForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -264,7 +279,6 @@ budgetForm.addEventListener('submit', async (e) => {
     } else {
         const dateParts = monthYear.split('-');
         alert(`${dateParts[0]} оны ${dateParts[1]} сарын ${category} ангилалд төсөв амжилттай тогтоогдлоо!`);
-        
         budgetForm.reset();
         
         const instance = bootstrap.Offcanvas.getInstance(document.getElementById('offcanvasBudget'));
@@ -274,7 +288,7 @@ budgetForm.addEventListener('submit', async (e) => {
     }
 });
 
-// Хэрэглэгчийн тогтоосон төсвүүдийг уншиж жагсаах функц
+// === ТӨСӨВ ТАТАЖ ЖАГСААХ ===
 async function fetchBudgets() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -303,7 +317,6 @@ async function fetchBudgets() {
     let htmlContent = `<h6 class="fw-bold text-dark mb-3">Одоогийн тогтоосон төсвүүд:</h6>`;
     
     budgets.forEach(b => {
-        // "2026-06" гэснийг "2026 оны 06 сар" болгож хэрэглэгчид гоё харуулах хөрвүүлэлт
         let displayMonth = b.month_year;
         if (b.month_year && b.month_year.includes('-')) {
             const parts = b.month_year.split('-');
@@ -325,4 +338,156 @@ async function fetchBudgets() {
     });
 
     budgetsContainer.innerHTML = htmlContent;
+}
+
+// === БАЖ ШАЛГАХ ФУНКЦҮҮД ===
+async function checkBudgetMasterBadge(userId) {
+    const currentMonthYear = new Date().toISOString().substring(0, 7); 
+
+    const { data: budgets } = await supabase
+        .from('budgets')
+        .select('category, limit_amount')
+        .eq('user_id', userId)
+        .eq('month_year', currentMonthYear);
+
+    if (!budgets || budgets.length === 0) return; 
+
+    const startDate = `${currentMonthYear}-01`;
+    const endDate = `${currentMonthYear}-31`;
+    const { data: expenses } = await supabase
+        .from('transactions')
+        .select('category, amount')
+        .eq('user_id', userId)
+        .eq('type', 'expense')
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+    let expenseMap = {};
+    if (expenses) {
+        expenses.forEach(tx => {
+            expenseMap[tx.category] = (expenseMap[tx.category] || 0) + tx.amount;
+        });
+    }
+
+    let isAllUnderBudget = true;
+    budgets.forEach(b => {
+        const totalSpent = expenseMap[b.category] || 0;
+        if (totalSpent > b.limit_amount) {
+            isAllUnderBudget = false; 
+        }
+    });
+
+    if (isAllUnderBudget) {
+        await awardBadge(userId, "Төсвийн Мастер");
+    }
+}
+
+async function checkFinancialBalanceBadge(userId, totalIncome, totalExpense) {
+    if (totalIncome > 0 && totalIncome >= totalExpense * 2) {
+        await awardBadge(userId, "Санхүүгийн Халим");
+    } else if (totalIncome > 0 && totalIncome > totalExpense) {
+        await awardBadge(userId, "Ухаалаг Хэмнэгч");
+    }
+}
+
+async function checkActivityBadge(userId) {
+    const { count } = await supabase
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+
+    if (count >= 100) {
+        await awardBadge(userId, "Санхүүгийн Про");
+    } else if (count >= 50) {
+        await awardBadge(userId, "Идэвхтэй Хэрэглэгч");
+    } else if (count >= 10) {
+        await awardBadge(userId, "Санхүү хөтлөгч");
+    }
+}
+
+// === БАЖ ОЛГОЖ СУПАБЕЙСЭД ХАДГАЛАХ ===
+async function awardBadge(userId, badgeName) {
+    // 1. Эхлээд энэ баж урьд нь хадгалагдсан эсэхийг шалгана
+    const { data: existing, error: checkError } = await supabase
+        .from('badges')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('badge_name', badgeName)
+        .maybeSingle();
+
+    if (checkError) {
+        console.error("Баж шалгахад алдаа гарлаа:", checkError.message);
+        return;
+    }
+
+    // 2. Хэрэв урьд нь аваагүй баж бол шинээр ИНСЕРТ хийнэ
+    if (!existing) {
+        // [ЧУХАЛ ЗАСАЛТ]: Энд заавал "await" байх ёстой. Тэгэхгүй бол өгөгдлийн санд бичиж амжилгүй алга болно!
+        const { error: insertError } = await supabase
+            .from('badges')
+            .insert([
+                { 
+                    user_id: userId, 
+                    badge_name: badgeName 
+                    // awarded_at нь default-оор now() учраас заавал явуулах шаардлагагүй
+                }
+            ]);
+
+        if (insertError) {
+            console.error("Баж хадгалахад алдаа гарлаа:", insertError.message);
+            return;
+        }
+
+        // Амжилттай хадгалагдсаны дараа л alert харуулна
+        alert(`🎉 Баяр хүргэе! Та "${badgeName}" баж авлаа!`);
+    }
+    
+    // Жагсаалтыг шинэчилж дэлгэцэнд зурна
+    await fetchUserBadges(); 
+}
+// === АВСАН БАЖУУДЫГ ТАТАЖ HTML ДЭЭР ХАРУУЛАХ ===
+async function fetchUserBadges() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: badges, error } = await supabase
+        .from('badges')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('awarded_at', { ascending: false });
+
+    if (error) {
+        console.error("Баж уншихад алдаа гарлаа:", error.message);
+        return;
+    }
+
+    const badgesContainer = document.getElementById('user-badges-list');
+    if (!badgesContainer) return; 
+
+    if (!badges || badges.length === 0) {
+        badgesContainer.innerHTML = `<div class="text-center py-2 text-muted small bg-light rounded w-100">Одоогоор шагнал аваагүй байна.</div>`;
+        return;
+    }
+
+    let htmlContent = '';
+    badges.forEach(b => {
+        let icon = '🏅';
+        let bgStyle = 'background: #f8f9fa; color: #212529;'; 
+        
+        if (b.badge_name === 'Санхүүгийн Халим') { icon = '🐋'; bgStyle = 'background: #e7f5ff; color: #1c7ed6; border: 1px solid #a5d8ff;'; }
+        if (b.badge_name === 'Ухаалаг Хэмнэгч') { icon = '🦊'; bgStyle = 'background: #ebfbee; color: #2b8a3e; border: 1px solid #b2f2bb;'; }
+        if (b.badge_name === 'Төсвийн Мастер') { icon = '👑'; bgStyle = 'background: #fff9db; color: #e67700; border: 1px solid #ffe066;'; }
+        if (b.badge_name === 'Санхүүдээ Аялагч') { icon = '🎒'; bgStyle = 'background: #f3f0ff; color: #6741d9; border: 1px solid #d0bfff;'; }
+        if (b.badge_name === 'Идэвхтэй Хэрэглэгч') { icon = '🔥'; bgStyle = 'background: #fff5f5; color: #e03131; border: 1px solid #ffc9c9;'; }
+        if (b.badge_name === 'Санхүүгийн Про') { icon = '💎'; bgStyle = 'background: #e3fafc; color: #0b7285; border: 1px solid #99e9f2;'; }
+
+        htmlContent += `
+            <div class="card d-inline-block text-center m-1 p-2 shadow-sm text-truncate" style="width: 105px; ${bgStyle} font-size: 10px; border-radius: 8px;">
+                <div class="fs-3 mb-1">${icon}</div>
+                <div class="fw-bold">${b.badge_name}</div>
+            </div>
+        `;
+    });
+
+    badgesContainer.innerHTML = htmlContent;
 }

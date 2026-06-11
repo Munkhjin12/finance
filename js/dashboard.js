@@ -215,13 +215,16 @@ async function renderTransactions(transactions) {
         console.error("Баж шалгахад алдаа гарлаа:", err);
     }
 }
-
 // === ГҮЙЛГЭЭ УСТГАХ ФУНКЦ ===
 window.deleteTransaction = async function(id) {
     const confirmDelete = confirm("Та энэ гүйлгээг устгахдаа итгэлтэй байна уу?");
     if (!confirmDelete) return;
 
     try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // 1. Гүйлгээг устгах
         const { error } = await supabase
             .from('transactions')
             .delete()
@@ -229,12 +232,23 @@ window.deleteTransaction = async function(id) {
 
         if (error) throw error;
         alert("Гүйлгээ амжилттай устгагдлаа.");
+
+        // 2. Гүйлгээнүүдийг дахин уншиж дэлгэцэнд зурна (Энэ нь дотроо балансын цолыг шинэчилнэ)
         await fetchTransactions();
+
+        // 3. Гүйлгээний тоо цөөрсөн тул идэвхийн цолыг дахин шалгаж устгана
+        await checkActivityBadge(user.id);
+        
+        // 4. Төсвийн мастер цолыг дахин шалгах
+        await checkBudgetMasterBadge(user.id);
+
+        // 5. Эцэст нь авсан цолнуудын жагсаалтыг дахин уншиж дэлгэцэнд зурна
+        await fetchUserBadges();
+
     } catch (error) {
-        alert("Гүйлгээ устгахад алдаа гарлаа: " + error.message);
+        alert("Гүйлгээ устгах явцад алдаа гарлаа: " + error.message);
     }
 }
-
 // === СИСТЕМЭЭС ГАРАХ ===
 btnLogout.addEventListener('click', async () => {
     const confirmLogout = confirm("Та системээс гарахдаа итгэлтэй байна уу?");
@@ -490,4 +504,54 @@ async function fetchUserBadges() {
     });
 
     badgesContainer.innerHTML = htmlContent;
+}
+
+// === ТУСЛАХ ФУНКЦ: ХЭРЭГЛЭГЧИЙН ЦОЛЫГ ӨГӨГДЛИЙН САНГААС УСТГАХ ===
+async function deleteBadge(userId, badgeName) {
+    const { error } = await supabase
+        .from('badges')
+        .delete()
+        .eq('user_id', userId)
+        .eq('badge_name', badgeName);
+
+    if (error) {
+        console.error(`"${badgeName}" цолыг устгахад алдаа гарлаа:`, error.message);
+    }
+}
+
+// === БАЛАНСЫН ЦОЛЫГ ШАЛГАХ БОЛОН УСТГАХ ===
+async function checkFinancialBalanceBadge(userId, totalIncome, totalExpense) {
+    // 1. Санхүүгийн Халим шалгуур
+    if (totalIncome > 0 && totalIncome >= totalExpense * 2) {
+        await awardBadge(userId, "Санхүүгийн Халим");
+    } else {
+        await deleteBadge(userId, "Санхүүгийн Халим"); // Нөхцөл хангахгүй бол устгана
+    }
+
+    // 2. Ухаалаг Хэмнэгч шалгуур
+    if (totalIncome > 0 && totalIncome > totalExpense) {
+        await awardBadge(userId, "Ухаалаг Хэмнэгч");
+    } else {
+        await deleteBadge(userId, "Ухаалаг Хэмнэгч"); // Нөхцөл хангахгүй бол устгана
+    }
+}
+
+// === ИДЭВХИЙН ЦОЛЫГ ШАЛГАХ БОЛОН УСТГАХ ===
+async function checkActivityBadge(userId) {
+    const { count } = await supabase
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+
+    // Санхүүгийн Про (>= 100)
+    if (count >= 100) { await awardBadge(userId, "Санхүүгийн Про"); } 
+    else { await deleteBadge(userId, "Санхүүгийн Про"); }
+
+    // Идэвхтэй Хэрэглэгч (>= 50)
+    if (count >= 50) { await awardBadge(userId, "Идэвхтэй Хэрэглэгч"); } 
+    else { await deleteBadge(userId, "Идэвхтэй Хэрэглэгч"); }
+
+    // Санхүүдээ Аялагч (>= 10)
+    if (count >= 10) { await awardBadge(userId, "Санхүүдээ Аялагч"); } 
+    else { await deleteBadge(userId, "Санхүүдээ Аялагч"); }
 }

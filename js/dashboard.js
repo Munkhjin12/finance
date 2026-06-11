@@ -15,7 +15,15 @@ const budgetMonthInput = document.getElementById('budget-month');
 
 const btnLogout = document.getElementById('btn-logout');
 
-// === ХУУДАС АЧААЛАГДАХАД АЖИЛЛАХ ХЭСЭГ ===
+// ТУСЛАХ ФУНКЦ: Локал цагаар "YYYY-MM" форматыг авах (UTC алдаанаас сэргийлнэ)
+function getCurrentLocalMonthYear() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+}
+
+// === HUUDAS ACHAALAGDAHAD AJILLAH KHESEG ===
 document.addEventListener('DOMContentLoaded', async () => {
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) {
@@ -24,13 +32,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     document.getElementById('user-email').textContent = user.email;
     
-    // Хуудас ачаалагдахад бүх өгөгдлийг зэрэг татаж харуулна
     await fetchBudgets();
     await fetchTransactions();
     await fetchUserBadges(); 
 });
 
-// === ШИНЭ ГҮЙЛГЭЭ НЭМЭХ ЛОГИК ===
+// === SHINE GUILGEE NEMEKH LOGIK ===
 transactionForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const type = txTypeInput.value;
@@ -47,7 +54,7 @@ transactionForm.addEventListener('submit', async (e) => {
         return;
     }
 
-    // --- ТӨСӨВ ХЭТЭРСЭН ЭСЭХИЙГ ШАЛГАНА ---
+    // --- TOSEV KHETERSEN ESEKHIYG SHALGANA ---
     if (type === 'expense') {
         const currentMonthYear = date.substring(0, 7); 
 
@@ -62,7 +69,11 @@ transactionForm.addEventListener('submit', async (e) => {
         if (budgetData) {
             const limitAmount = budgetData.limit_amount;
             const startDate = `${currentMonthYear}-01`;
-            const endDate = `${currentMonthYear}-31`;
+            
+            // Сарын сүүлийн өдрийг зөв тооцоолох (2, 4, 6-р сар г.м)
+            const parts = currentMonthYear.split('-');
+            const lastDay = new Date(parts[0], parts[1], 0).getDate();
+            const endDate = `${currentMonthYear}-${lastDay}`;
 
             const { data: pastExpenses } = await supabase
                 .from('transactions')
@@ -82,7 +93,6 @@ transactionForm.addEventListener('submit', async (e) => {
 
             if (totalPastExpense + amount > limitAmount) {
                 const currentTotal = totalPastExpense + amount;
-                const parts = currentMonthYear.split('-');
                 const displayMonth = `${parts[0]} оны ${parts[1]} сар`;
 
                 const proceed = confirm(
@@ -94,7 +104,7 @@ transactionForm.addEventListener('submit', async (e) => {
         }
     }
 
-    // --- ГҮЙЛГЭЭ ХАДГАЛАХ ХЭСЭГ ---
+    // --- GUILGEE KHADGALAKH KHESEG ---
     const { error } = await supabase
         .from('transactions')
         .insert([
@@ -114,15 +124,15 @@ transactionForm.addEventListener('submit', async (e) => {
         alert("Гүйлгээ амжилттай бүртгэгдлээ!");
         transactionForm.reset();
         
-        // Шинэ гүйлгээ нэмэгдсэний дараа бүх бажуудыг дахин бодож шинэчилнэ/устгана
         await checkActivityBadge(user.id);
         await checkBudgetMasterBadge(user.id);
     }
     await fetchTransactions();
-    await fetchUserBadges(); // Цолны жагсаалтыг хамгийн сүүлд нь дэлгэцэнд зурна
+    await fetchBudgets(); 
+    await fetchUserBadges(); 
 });
 
-// === ГҮЙЛГЭЭ ТАТАХ ФУНКЦ ===
+// === GUILGEE TATAKH FUNKTS ===
 async function fetchTransactions() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -140,7 +150,7 @@ async function fetchTransactions() {
     await renderTransactions(transactions);
 }
 
-// === ГҮЙЛГЭЭГ ДЭЛГЭЦЭНД ХАРУУЛАХ ===
+// === GUILGEEGEE DELGETSEND KHARUULAKH ===
 async function renderTransactions(transactions) {
     const listContainer = document.getElementById('transaction-list');
     const totalBalanceEl = document.getElementById('total-balance');
@@ -164,7 +174,6 @@ async function renderTransactions(transactions) {
             </tr>
         `;
         
-        // Хэрэв гүйлгээ байхгүй бол балансын цолнуудыг устгана
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
@@ -226,7 +235,7 @@ async function renderTransactions(transactions) {
     }
 }
 
-// === ГҮЙЛГЭЭ УСТГАХ ФУНКЦ ===
+// === GUILGEE USTGAKH FUNKTS ===
 window.deleteTransaction = async function(id) {
     const confirmDelete = confirm("Та энэ гүйлгээг устгахдаа итгэлтэй байна уу?");
     if (!confirmDelete) return;
@@ -235,7 +244,6 @@ window.deleteTransaction = async function(id) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // 1. Гүйлгээг устгах
         const { error } = await supabase
             .from('transactions')
             .delete()
@@ -244,14 +252,10 @@ window.deleteTransaction = async function(id) {
         if (error) throw error;
         alert("Гүйлгээ амжилттай устгагдлаа.");
 
-        // 2. Гүйлгээнүүдийг дахин уншиж дэлгэцэнд зурна (Балансын цолыг дотроо автоматаар устгаж/шинэчилнэ)
         await fetchTransactions();
-
-        // 3. Гүйлгээ цөөрсөн тул идэвхийн болон төсвийн цолыг устгах эсэхийг дахин шалгана
+        await fetchBudgets(); 
         await checkActivityBadge(user.id);
         await checkBudgetMasterBadge(user.id);
-
-        // 4. Эцэст нь авсан цолнуудын жагсаалтыг дахин уншиж дэлгэцэнд зурна
         await fetchUserBadges();
 
     } catch (error) {
@@ -259,7 +263,7 @@ window.deleteTransaction = async function(id) {
     }
 }
 
-// === СИСТЕМЭЭС ГАРАХ ===
+// === SYSTEMEES GARAKH ===
 btnLogout.addEventListener('click', async () => {
     const confirmLogout = confirm("Та системээс гарахдаа итгэлтэй байна уу?");
     if (!confirmLogout) return;
@@ -273,7 +277,7 @@ btnLogout.addEventListener('click', async () => {
     }
 });
 
-// === ТӨСӨВ ТОГТООХ ФОРМЫН ЛОГИК ===
+// === TOSEV TOGTOOKH FORMYN LOGIK ===
 budgetForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -309,17 +313,16 @@ budgetForm.addEventListener('submit', async (e) => {
         if (instance) instance.hide();
         
         await fetchBudgets();
-        await checkBudgetMasterBadge(user.id); // Төсөв шинээр нэмэгдэхэд мөн цол шалгана
+        await checkBudgetMasterBadge(user.id);
         await fetchUserBadges();
     }
 });
 
-// === ТӨСӨВ ТАТАЖ ЖАГСААХ БОЛОН АШИГЛАЛТЫГ ХАРУУЛАХ ===
+// === TOSEV TATAJH JAAGSAAKH BOLON ULDEGDEL, PROGRESS KHARUULAKH ===
 async function fetchBudgets() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. Бүх тогтоосон төсвүүдийг татах
     const { data: budgets, error } = await supabase
         .from('budgets')
         .select('*')
@@ -335,7 +338,7 @@ async function fetchBudgets() {
     const summaryContainer = document.getElementById('budget-summary-container');
     
     if (!budgets || budgets.length === 0) {
-        if (summaryContainer) summaryContainer.classList.add('d-none'); // Төсөв байхгүй бол хураангуйг нууна
+        if (summaryContainer) summaryContainer.classList.add('d-none');
         budgetsContainer.innerHTML = `
             <h6 class="fw-bold text-dark mb-3">Одоогийн тогтоосон төсвүүд:</h6>
             <div class="text-center py-3 text-muted small bg-light rounded">Одоогоор төсөв тогтоогоогүй байна.</div>
@@ -343,32 +346,38 @@ async function fetchBudgets() {
         return;
     }
 
-    // 2. Яг одоогийн сарын зарлагуудыг татаж, төсөвтэй тулгах бэлтгэл хийх
-    const currentMonthYear = new Date().toISOString().substring(0, 7); // "2026-06" г.м
+    // Локал цаг бүсээр одоогийн сарыг зөв авах ("2026-06")
+    const currentMonthYear = getCurrentLocalMonthYear(); 
     const startDate = `${currentMonthYear}-01`;
-    const endDate = `${currentMonthYear}-31`;
+    
+    const dateParts = currentMonthYear.split('-');
+    const lastDay = new Date(dateParts[0], dateParts[1], 0).getDate();
+    const endDate = `${currentMonthYear}-${lastDay}`;
 
+    // Зарлагуудыг татах
     const { data: expenses } = await supabase
         .from('transactions')
-        .select('category, amount')
+        .select('category, amount, date')
         .eq('user_id', user.id)
-        .eq('type', 'expense')
-        .gte('date', startDate)
-        .lte('date', endDate);
+        .eq('type', 'expense');
 
-    // Зарлагуудыг ангиллаар нь бүлэглэх
+    // Зарлагуудыг сар болон ангиллаар нь бүлэглэх
     let expenseMap = {};
     if (expenses) {
         expenses.forEach(tx => {
-            expenseMap[tx.category] = (expenseMap[tx.category] || 0) + tx.amount;
+            if (tx.date) {
+                const txMonth = tx.date.substring(0, 7); // Гүйлгээний сар ("2026-06")
+                const key = `${txMonth}_${tx.category}`;
+                expenseMap[key] = (expenseMap[key] || 0) + tx.amount;
+            }
         });
     }
 
-    // Нийт тооцоог бодох хувьсагчид
     let totalBudgetAmount = 0;
     let totalBudgetSpent = 0;
+    let hasCurrentMonthBudget = false;
 
-    let htmlContent = `<h6 class="fw-bold text-dark mb-3">Ангилал тус бүрийн ашиглалт:</h6>`;
+    let htmlContent = `<h6 class="fw-bold text-dark mb-3">Ангилал тус бүрийн ашиглалт, үлдэгдэл:</h6>`;
     
     budgets.forEach(b => {
         let displayMonth = b.month_year;
@@ -377,24 +386,24 @@ async function fetchBudgets() {
             displayMonth = `${parts[0]} оны ${parts[1]} сар`;
         }
 
-        // Энэ ангиллын төсөвт харгалзах зарлага (Зөвхөн ижил сарынх бол)
-        const isCurrentMonth = b.month_year === currentMonthYear;
-        const spent = isCurrentMonth ? (expenseMap[b.category] || 0) : 0;
+        // Төсвийн сар болон ангиллыг тааруулж зарлагыг олно
+        const budgetKey = `${b.month_year}_${b.category}`;
+        const spent = expenseMap[budgetKey] || 0;
         const remaining = b.limit_amount - spent;
         
-        // Зөвхөн энэ сарын төсвийг нийт тооцоонд нэмнэ
-        if (isCurrentMonth) {
+        // Зөвхөн яг одоогийн сарын төсвийг ерөнхий хураангуй бааранд нэмнэ
+        if (b.month_year === currentMonthYear) {
             totalBudgetAmount += b.limit_amount;
             totalBudgetSpent += spent;
+            hasCurrentMonthBudget = true;
         }
 
-        // Ангилал тус бүрийн ашиглалтын хувь
         const percent = Math.min(Math.round((spent / b.limit_amount) * 100), 100) || 0;
         const barColor = percent >= 100 ? 'bg-danger' : percent >= 80 ? 'bg-warning' : 'bg-success';
 
         htmlContent += `
-            <div class="card p-3 mb-2 bg-light border-0 shadow-sm">
-                <div class="d-flex justify-content-between align-items-center mb-1">
+            <div class="card p-3 mb-2 bg-light border-0 shadow-sm position-relative">
+                <div class="d-flex justify-content-between align-items-center mb-1 pe-4">
                     <div>
                         <span class="fw-bold small text-dark">${b.category}</span>
                         <span class="text-muted mx-1">•</span>
@@ -403,28 +412,32 @@ async function fetchBudgets() {
                     <span class="fw-bold text-primary small">${spent.toLocaleString()} ₮ / ${b.limit_amount.toLocaleString()} ₮</span>
                 </div>
                 
-                <div class="progress my-1" style="height: 6px; border-radius: 3px;">
+                <div class="progress my-2" style="height: 6px; border-radius: 3px;">
                     <div class="progress-bar ${barColor}" role="progressbar" style="width: ${percent}%"></div>
                 </div>
                 
-                <div class="d-flex justify-content-between entry-sub-text" style="font-size: 11px;">
+                <div class="d-flex justify-content-between small" style="font-size: 11px;">
                     <span class="text-muted">Ашиглалт: ${percent}%</span>
-                    <span class="${remaining >= 0 ? 'text-success' : 'text-danger'} fw-medium">
-                        ${remaining >= 0 ? 'Үлдсэн: ' + remaining.toLocaleString() : 'Хэтэрсэн: ' + Math.abs(remaining).toLocaleString()} ₮
+                    <span class="${remaining >= 0 ? 'text-success' : 'text-danger'} fw-bold">
+                        ${remaining >= 0 ? 'Ашиглах үлдэгдэл: ' + remaining.toLocaleString() : 'Хэтэрсэн: ' + Math.abs(remaining).toLocaleString()} ₮
                     </span>
                 </div>
+
+                <button class="btn btn-sm text-danger p-0 position-absolute" style="top: 10px; right: 12px;" onclick="deleteBudget('${b.id}')" title="Төсөв устгах">
+                    <i class="fa-solid fa-trash-can small"></i>
+                </button>
             </div>
         `;
     });
 
     budgetsContainer.innerHTML = htmlContent;
 
-    // 3. НИЙТ ХУРААНГУЙ КАРТЫГ ШИНЭЧЛЭХ (Зөвхөн энэ сард төсөв тогтоосон бол харуулна)
-    if (totalBudgetAmount > 0 && summaryContainer) {
+    // 3. NIIYT ERONKHII ASHIGLALTYN KARTYG SHINECHLEKH
+    if (hasCurrentMonthBudget && totalBudgetAmount > 0 && summaryContainer) {
         summaryContainer.classList.remove('d-none');
         
         const totalRemaining = totalBudgetAmount - totalBudgetSpent;
-        const totalPercent = Math.min(Math.round((totalBudgetSpent / totalBudgetAmount) * 100), 100);
+        const totalPercent = Math.min(Math.round((totalBudgetSpent / totalBudgetAmount) * 100), 100) || 0;
         
         document.getElementById('budget-summary-percent').innerText = `${totalPercent}%`;
         document.getElementById('budget-summary-spent').innerText = `${totalBudgetSpent.toLocaleString()} ₮`;
@@ -432,10 +445,10 @@ async function fetchBudgets() {
         const remainingEl = document.getElementById('budget-summary-remaining');
         if (totalRemaining >= 0) {
             remainingEl.innerText = `${totalRemaining.toLocaleString()} ₮`;
-            remainingEl.className = 'text-success';
+            remainingEl.className = 'text-success fw-bold';
         } else {
             remainingEl.innerText = `Хэтэрсэн: ${Math.abs(totalRemaining).toLocaleString()} ₮`;
-            remainingEl.className = 'text-danger';
+            remainingEl.className = 'text-danger fw-bold';
         }
 
         const mainBar = document.getElementById('budget-summary-bar');
@@ -446,13 +459,39 @@ async function fetchBudgets() {
     }
 }
 
-// === БАЖ ШАЛГАХ ФУНКЦҮҮД ===
+// === TOSEV USTGAKH FUNKTS ===
+window.deleteBudget = async function(budgetId) {
+    const confirmDelete = confirm("Та энэ тогтоосон төсвийг устгахдаа итгэлтэй байна уу?");
+    if (!confirmDelete) return;
+
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { error } = await supabase
+            .from('budgets')
+            .delete()
+            .eq('id', budgetId);
+
+        if (error) throw error;
+        alert("Төсөв амжилттай устгагдлаа.");
+
+        await fetchBudgets();
+        await checkBudgetMasterBadge(user.id);
+        await fetchUserBadges();
+
+    } catch (error) {
+        alert("Төсөв устгахад алдаа гарлаа: " + error.message);
+    }
+}
+
+// === BAJ SHALGAKH FUNKTSUUD ===
 async function checkBudgetMasterBadge(userId) {
-    const currentMonthYear = new Date().toISOString().substring(0, 7); 
+    const currentMonthYear = getCurrentLocalMonthYear(); 
 
     const { data: budgets } = await supabase
         .from('budgets')
-        .select('category, limit_amount')
+        .select('category, limit_amount, month_year')
         .eq('user_id', userId)
         .eq('month_year', currentMonthYear);
 
@@ -461,26 +500,27 @@ async function checkBudgetMasterBadge(userId) {
         return; 
     }
 
-    const startDate = `${currentMonthYear}-01`;
-    const endDate = `${currentMonthYear}-31`;
     const { data: expenses } = await supabase
         .from('transactions')
-        .select('category, amount')
+        .select('category, amount, date')
         .eq('user_id', userId)
-        .eq('type', 'expense')
-        .gte('date', startDate)
-        .lte('date', endDate);
+        .eq('type', 'expense');
 
     let expenseMap = {};
     if (expenses) {
         expenses.forEach(tx => {
-            expenseMap[tx.category] = (expenseMap[tx.category] || 0) + tx.amount;
+            if (tx.date) {
+                const txMonth = tx.date.substring(0, 7);
+                const key = `${txMonth}_${tx.category}`;
+                expenseMap[key] = (expenseMap[key] || 0) + tx.amount;
+            }
         });
     }
 
     let isAllUnderBudget = true;
     budgets.forEach(b => {
-        const totalSpent = expenseMap[b.category] || 0;
+        const budgetKey = `${b.month_year}_${b.category}`;
+        const totalSpent = expenseMap[budgetKey] || 0;
         if (totalSpent > b.limit_amount) {
             isAllUnderBudget = false; 
         }
@@ -493,7 +533,7 @@ async function checkBudgetMasterBadge(userId) {
     }
 }
 
-// === ТУСЛАХ ФУНКЦ: ХЭРЭГЛЭГЧИЙН ЦОЛЫГ ӨГӨГДЛИЙН САНГААС УСТГАХ ===
+// === TUSLAKH FUNKTS: KHEREGLYEGCHIIN TSOLYG OGOGDLIIN SANGAAS USTGAKH ===
 async function deleteBadge(userId, badgeName) {
     const { error } = await supabase
         .from('badges')
@@ -506,16 +546,14 @@ async function deleteBadge(userId, badgeName) {
     }
 }
 
-// === БАЛАНСЫН ЦОЛЫГ ШАЛГАХ БОЛОН УСТГАХ ===
+// === BALANSIIN TSOLYG SHALGAKH BOLON USTGAKH ===
 async function checkFinancialBalanceBadge(userId, totalIncome, totalExpense) {
-    // 1. Санхүүгийн Халим шалгуур
     if (totalIncome > 0 && totalIncome >= totalExpense * 2) {
         await awardBadge(userId, "Санхүүгийн Халим");
     } else {
         await deleteBadge(userId, "Санхүүгийн Халим"); 
     }
 
-    // 2. Ухаалаг Хэмнэгч шалгуур
     if (totalIncome > 0 && totalIncome > totalExpense) {
         await awardBadge(userId, "Ухаалаг Хэмнэгч");
     } else {
@@ -523,27 +561,24 @@ async function checkFinancialBalanceBadge(userId, totalIncome, totalExpense) {
     }
 }
 
-// === ИДЭВХИЙН ЦОЛЫГ ШАЛГАХ БОЛОН УСТГАХ ===
+// === IDEVKHIIN TSOLYG SHALGAKH BOLON USTGAKH ===
 async function checkActivityBadge(userId) {
     const { count } = await supabase
         .from('transactions')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId);
 
-    // Санхүүгийн Про (>= 100)
     if (count >= 100) { await awardBadge(userId, "Санхүүгийн Про"); } 
     else { await deleteBadge(userId, "Санхүүгийн Про"); }
 
-    // Идэвхтэй Хэрэглэгч (>= 50)
     if (count >= 50) { await awardBadge(userId, "Идэвхтэй Хэрэглэгч"); } 
     else { await deleteBadge(userId, "Идэвхтэй Хэрэглэгч"); }
 
-    // Санхүү хөтлөгч (>= 10) -> [ЗАСАЛТ] Олгодог нэртэйгээ ижилхэн болгож засав!
     if (count >= 10) { await awardBadge(userId, "Санхүү хөтлөгч"); } 
     else { await deleteBadge(userId, "Санхүү хөтлөгч"); }
 }
 
-// === БАЖ ОЛГОЖ СУПАБЕЙСЭД ХАДГАЛАХ ===
+// === BAJ OLGOJ SUPABASE-D KHADGALAKH ===
 async function awardBadge(userId, badgeName) {
     const { data: existing, error: checkError } = await supabase
         .from('badges')
@@ -576,7 +611,7 @@ async function awardBadge(userId, badgeName) {
     }
 }
 
-// === АВСАН БАЖУУДЫГ ТАТАЖ HTML ДЭЭР ХАРУУЛАХ ===
+// === AVSAN BAJUUDYG TATAJH HTML DEER KHARUULAKH ===
 async function fetchUserBadges() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
